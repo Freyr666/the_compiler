@@ -1,0 +1,3 @@
+(executable
+  (name      tiger)
+  (libraries complib parsing))
