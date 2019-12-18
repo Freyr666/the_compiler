@@ -1,6 +1,7 @@
 (library
- (name      parsing)
- (libraries complib))
+  (name      parsing)
+  (libraries complib)
+  (preprocess (pps ppx_deriving.show)))
 
 (ocamllex
   (modules lexer))
