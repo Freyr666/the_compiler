@@ -23,17 +23,22 @@
 %token                 LBRACE "{" RBRACE "}"
 %token                 DOT "." COLON ":" COMMA "," SEMI ";"
 %token                 PLUS "+" MINUS "-" TIMES "*" DIV "/"
-(*%token                 UMINUS *)
+%token                 UMINUS
 %token                 EQ "=" NE "<>"
 %token                 LT "<" LE "<=" GT ">" GE ">="
 %token                 AND "&" OR "|"
 %token                 ASSIGN ":="
 %token                 EOF
 
-%nonassoc DO ASSIGN OF
-%nonassoc EQ NE LT LE GT GE
-%left PLUS MINUS OR AND TIMES DIV
-%right THEN ELSE
+%nonassoc DO THEN OF
+%nonassoc ELSE
+%nonassoc ASSIGN
+%left OR
+%left AND
+%nonassoc EQ NE LT GT GE LE
+%left PLUS MINUS
+%left TIMES DIV
+%nonassoc UMINUS
 
 %start <Parsetree.exp>    program
 %%
@@ -58,6 +63,8 @@ exp:
     { Exp.string ~loc:$loc x }
   | func=symbol LPAREN a=args RPAREN
     { Exp.apply func a }
+  | MINUS y=exp_loc %prec UMINUS
+    { Exp.binop (Op.plus ~loc:$loc($1)) (mkloc ~loc:$loc (Exp.int ~loc:$loc($1) 0)) y }
   | x=exp_loc o=binop y=exp_loc
     { Exp.binop o x y }
   | t=symbol LBRACE f=record_fields RBRACE
@@ -76,8 +83,8 @@ exp:
     { Exp._for x l h b }
   | BREAK
     { Exp.break ~loc:$loc }
-  | LET ds=decs IN es=exp_loc END
-    { Exp._let ds es }
+  | LET ds=decs IN es=exps END
+    { Exp._let ds (mkloc ~loc:$loc(es) (Exp.seq es)) }
   | t=symbol LBRACK n=exp_loc RBRACK OF x=exp_loc
     { Exp.array t n x }
 
@@ -106,8 +113,8 @@ varend:
 /*empty*/ { fun x -> x }
   | DOT name=ID varend
     { fun v -> $3(Var.field ~loc:$loc v name) }
-  | LBRACK ind=exp RBRACK varend
-    { fun v -> $4(Var.subscript ~loc:$loc v ind) }
+  | DOT LBRACK ind=exp RBRACK varend
+    { fun v -> $5(Var.subscript ~loc:$loc v ind) }
 
 args:
   | l=separated_list(COMMA, exp_loc)

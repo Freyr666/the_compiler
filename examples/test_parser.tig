@@ -11,7 +11,7 @@ let
   function printboard() = (
     for i := 0 to N-1 do (
       for j := 0 to N-1 do (
-        print(if col[i] = 0 then " 0" else " .");
+        print(if col.[i] = 0 then " 0" else " .");
         print("\n")
       );
       print("\n")
