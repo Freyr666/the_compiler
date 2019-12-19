@@ -59,7 +59,7 @@ and exp =
   | Pexp_let of { decs : dec list; body : exp loc }
   | Pexp_array of { typ : Symbol.t loc; size : exp loc; init : exp loc }
 
-and op = Pop_plus | Pop_minus | Pop_times | Pop_divide
+and op = Pop_plus | Pop_minus | Pop_times | Pop_divide | Pop_and | Pop_or
          | Pop_eq | Pop_ne | Pop_lt | Pop_le | Pop_gt | Pop_ge
 
 and var =

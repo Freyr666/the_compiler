@@ -57,6 +57,8 @@ rule lexer = parse
   | "-" { MINUS }
   | "*" { TIMES }
   | "/" { DIV }
+  | "&" { AND }
+  | "|" { OR }
   | "=" { EQ }
   | "<>" { NE }
   | "<" { LT }

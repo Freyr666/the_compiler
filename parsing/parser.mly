@@ -26,15 +26,16 @@
 (*%token                 UMINUS *)
 %token                 EQ "=" NE "<>"
 %token                 LT "<" LE "<=" GT ">" GE ">="
-(*%token                 AND OR *)
+%token                 AND "&" OR "|"
 %token                 ASSIGN ":="
 %token                 EOF
 
-%nonassoc OF
-%left PLUS
+%nonassoc DO ASSIGN OF
+%nonassoc EQ NE LT LE GT GE
+%left PLUS MINUS OR AND TIMES DIV
+%right THEN ELSE
 
 %start <Parsetree.exp>    program
-
 %%
 
 program:
@@ -85,6 +86,8 @@ exp:
   | MINUS    { Op.minus ~loc:$loc }
   | TIMES    { Op.times ~loc:$loc }
   | DIV      { Op.divide ~loc:$loc }
+  | AND      { Op._and ~loc:$loc }
+  | OR       { Op._or ~loc:$loc }
   | EQ       { Op.eq ~loc:$loc }
   | NE       { Op.ne ~loc:$loc }
   | LT       { Op.lt ~loc:$loc }
@@ -97,10 +100,14 @@ exps:
     { es }
 
 var:
-  | name=ID              { Var.simple ~loc:$loc name }
-  | v=var DOT name=ID    { Var.field ~loc:$loc v name }
-  | v=var DOT LBRACK ind=exp RBRACK { Var.subscript ~loc:$loc v ind }
-(*TODO resolve this conflict and remove dot*)
+  | name=ID varend  { $2(Var.simple ~loc:$loc name) }
+
+varend:
+/*empty*/ { fun x -> x }
+  | DOT name=ID varend
+    { fun v -> $3(Var.field ~loc:$loc v name) }
+  | LBRACK ind=exp RBRACK varend
+    { fun v -> $4(Var.subscript ~loc:$loc v ind) }
 
 args:
   | l=separated_list(COMMA, exp_loc)
