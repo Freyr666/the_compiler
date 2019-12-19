@@ -1,33 +1,4 @@
 
-** Conflict (shift/reduce) in state 62.
-** Tokens involved: TIMES PLUS OR NE MINUS LT LE GT GE EQ DIV AND
-** The following explanations concentrate on token TIMES.
-** This state is reached from program after reading:
-
-symbol LBRACK exp_loc RBRACK OF exp_loc 
-
-** The derivations that appear below have the following common factor:
-** (The question mark symbol (?) represents the spot where the derivations begin to differ.)
-
-program 
-exp EOF 
-(?)
-
-** In state 62, looking ahead at TIMES, shifting is permitted
-** because of the following sub-derivation:
-
-symbol LBRACK exp_loc RBRACK OF exp_loc 
-                                exp 
-                                exp_loc . TIMES exp_loc 
-
-** In state 62, looking ahead at TIMES, reducing production
-** exp -> symbol LBRACK exp_loc RBRACK OF exp_loc 
-** is permitted because of the following sub-derivation:
-
-exp_loc TIMES exp_loc // lookahead token appears
-exp // lookahead token is inherited
-symbol LBRACK exp_loc RBRACK OF exp_loc . 
-
 ** Conflict (shift/reduce) in state 16.
 ** Token involved: LBRACK
 ** This state is reached from program after reading:
@@ -52,5 +23,5 @@ ID .
 ** because of the following sub-derivation:
 
 var 
-ID varrest 
-   . LBRACK exp RBRACK varrest 
+ID varend 
+   . LBRACK exp RBRACK varend 
