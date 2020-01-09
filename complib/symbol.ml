@@ -20,7 +20,7 @@ let symbol name =
      !symb_ind, name
 
 let name : t -> string = snd
-
+                       
 module Table = Map.Make (struct
                    type nonrec t = t
                    let compare (n1,_) (n2,_) = Int.compare n1 n2

@@ -10,6 +10,14 @@
          | Pdec_fun ll, Pdec_fun rl -> Pdec_fun (ll @ rl)::tl
          | Pdec_var ll, Pdec_var rl -> Pdec_var (ll @ rl)::tl
          | _ -> dec::l
+
+    let reverse_decs decs =
+      let rec loop acc = function
+        | [] -> acc
+        | (Pdec_typ l)::tl -> loop ((Pdec_typ (List.rev l))::acc) tl
+        | (Pdec_fun l)::tl -> loop ((Pdec_fun (List.rev l))::acc) tl
+        | (Pdec_var l)::tl -> loop ((Pdec_var (List.rev l))::acc) tl
+      in loop [] decs
     
 %}
 
@@ -84,7 +92,7 @@ exp:
   | BREAK
     { Exp.break ~loc:$loc }
   | LET ds=decs IN es=exps END
-    { Exp._let ds (mkloc ~loc:$loc(es) (Exp.seq es)) }
+    { Exp._let (reverse_decs ds) (mkloc ~loc:$loc(es) (Exp.seq es)) }
   | t=symbol LBRACK n=exp_loc RBRACK OF x=exp_loc
     { Exp.array t n x }
 

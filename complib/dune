@@ -1,2 +1,3 @@
 (library
- (name complib))
+ (name    complib)
+ (wrapped false))
