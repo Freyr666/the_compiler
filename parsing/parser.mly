@@ -8,7 +8,6 @@
          match dec, h with
          | Pdec_typ ll, Pdec_typ rl -> Pdec_typ (ll @ rl)::tl
          | Pdec_fun ll, Pdec_fun rl -> Pdec_fun (ll @ rl)::tl
-         | Pdec_var ll, Pdec_var rl -> Pdec_var (ll @ rl)::tl
          | _ -> dec::l
 
     let reverse_decs decs =
@@ -16,7 +15,7 @@
         | [] -> acc
         | (Pdec_typ l)::tl -> loop ((Pdec_typ (List.rev l))::acc) tl
         | (Pdec_fun l)::tl -> loop ((Pdec_fun (List.rev l))::acc) tl
-        | (Pdec_var l)::tl -> loop ((Pdec_var (List.rev l))::acc) tl
+        | (Pdec_var _ as d)::tl -> loop (d::acc) tl
       in loop [] decs
     
 %}

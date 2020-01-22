@@ -23,8 +23,10 @@ let parse in_chan =
     end
 
 let typecheck parsetree =
-  failwith
-    (Printf.sprintf "Typecheck is not implemented\nGot a parsetree:\n%s" (Parsing.Parsetree.show_exp parsetree))
+  let open Middle_end in
+  let res = Semant.trans_expr Types.Env.empty Types.Env.empty parsetree in
+  Printf.printf "Got expr of type %s" (Types.to_string res.typ);
+  res
 
 let () =
   let filename = Sys.argv.(1) in
@@ -38,3 +40,4 @@ let () =
   | Failure s ->
      print_endline "Error:";
      print_endline s
+  | exn -> print_endline (Printexc.to_string exn)

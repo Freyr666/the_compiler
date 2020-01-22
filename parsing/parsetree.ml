@@ -3,7 +3,7 @@ open Location
 type dec =
   | Pdec_typ of typdec loc list
   | Pdec_fun of fundec loc list
-  | Pdec_var of vardec loc list
+  | Pdec_var of vardec loc (* Vars can't be mutually recursive *)
   [@@deriving show]
 
 and typdec = { typ_name : Symbol.t

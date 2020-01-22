@@ -11,3 +11,6 @@ let show_loc sh x = sh x.data
 let mk st en : t = (st, en)
 
 let mkloc ~loc data = {data;loc}
+
+let map ~f { data; loc } =
+  { data = f data; loc }

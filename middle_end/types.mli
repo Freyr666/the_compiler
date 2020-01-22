@@ -11,6 +11,8 @@ type t =
   | Trecord of (Symbol.t * t) list * unique
   | Tunknown_yet of Symbol.t * t option
 
+val to_string : t -> string
+
 module Env : sig
   type nonrec typ = t
 

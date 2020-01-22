@@ -55,7 +55,7 @@ module Dec = struct
   let func ~loc ?fun_result fun_name fun_params fun_body =
     Pdec_fun [ mkloc ~loc ({ fun_name; fun_result; fun_body; fun_params }) ]
   let var ~loc ?(esc=false) ?var_typ var_name var_init =
-    Pdec_var [ mkloc ~loc { var_name; var_escape = ref esc; var_typ = var_typ; var_init }]
+    Pdec_var (mkloc ~loc { var_name; var_escape = ref esc; var_typ = var_typ; var_init })
   let typ_alias ~loc typ_name name =
     Pdec_typ [ mkloc ~loc { typ_name = Symbol.symbol typ_name
                           ; typ = Ptyp_alias name
