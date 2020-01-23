@@ -119,7 +119,12 @@ let rec trans_expr vals types exp =
      check_type Tint size;
      { expr = (); typ }
   | Pexp_let { decs; body } ->
-     let vals', types' = trans_decs vals types decs in
+     let vals', types' =
+       List.fold_left
+         (fun (vals, types) dec -> trans_decs vals types dec)
+         (vals, types)
+         decs
+     in
      trans_expr vals' types' body.data
 
 and trans_var vals types var =
@@ -149,10 +154,117 @@ and trans_var vals types var =
     end
 
 and trans_decs vals types = function
-  | [] -> vals, types
-  | (Pdec_var _vardec)::_tl ->
-     failwith "TODO"
-  | _ -> failwith "TODO"
+  | Pdec_var { data; loc } when data.var_typ = None ->
+     let typed_expr = trans_expr vals types data.var_init.data in
+     if typed_expr.typ = Tnil
+     then type_mismatch loc "Nil variable requires a type constraint";
+     let vals' = Env.replace data.var_name.data (Env.Var typed_expr.typ) vals in
+     vals', types
+  | Pdec_var { data; loc } ->
+     let constr =
+       let typ_name = Option.get data.var_typ in
+       match Env.find_opt typ_name.data types with
+       | Some t -> t
+       | None ->
+          type_unknown loc "No such type %s" (Symbol.name typ_name.data)
+     in
+     let typed_expr = trans_expr vals types data.var_init.data in
+     begin match Types.coerce typed_expr.typ constr with
+     | None ->
+        type_mismatch loc "Can't coerce %s to %s"
+          (Types.to_string typed_expr.typ) (Types.to_string constr)
+     | Some typ ->
+        let vals' = Env.replace data.var_name.data (Env.Var typ) vals in
+        vals', types
+     end
+  | Pdec_typ lst ->
+     let (_,loc,typ_list) =
+       List.fold_left (fun (types, _, acc) (r : Parsetree.typdec Location.loc) ->
+           let typ = construct_type types r.data.typ in
+           unfold_types acc (r.data.typ_name, typ);
+           (Env.replace r.data.typ_name typ types,
+            r.loc,
+            acc@[r.data.typ_name, typ]))
+         (types, Location.dummy, [])
+         lst
+     in
+     let typ_list = lift_types loc typ_list in
+     let types' = List.fold_left (fun env (name, typ) ->
+                      Env.replace name typ env)
+                    types
+                    typ_list
+     in
+     vals, types'
+  | Pdec_fun _lst ->
+     vals, types
+
+and unfold_types type_list (name, typ) =
+  List.iter (function
+      | (_, Tunknown_yet (n, r)) when !r = None && n = name ->
+         r := Some typ
+      | _ -> ())
+    type_list
+
+and lift_types loc type_list =
+  let check list =
+    List.iter (function (_, Tunknown_yet (name,_)) ->
+                 type_unknown loc "Rec type %s is unknown" (Symbol.name name)
+                      | _ -> ())
+      list;
+    list
+  in
+  let check_loops x =
+    let rec traverse former (name, typ) =
+      match typ with
+      | Tunknown_yet (alias, { contents = Some t }) ->
+         if Symbol.equal alias former
+         then type_mismatch loc "%s -> %s loop detected"
+                (Symbol.name former) (Symbol.name name)
+         else traverse former (alias, t)
+      | _ -> ()
+    in
+    match x with
+    | name, Tunknown_yet (alias, { contents = Some t }) ->
+       traverse name (alias, t)
+    | _ -> ()
+  in
+  let rec loop changed list =
+    if not changed
+    then check list
+    else
+      let changed' = ref false in
+      let updated =
+        List.map (function
+            | (name, Tunknown_yet (_, { contents=Some t })) ->
+               changed' := true;
+               (name,t)
+            | t -> t)
+          list
+      in loop !changed' updated
+  in
+  List.iter check_loops type_list;
+  loop true type_list
+
+and construct_type types (typ : Parsetree.typ) =
+  let open Parsing.Location in
+  let new_type name =
+    match Env.find_opt name types with
+    | Some t -> t
+    | None ->
+       Tunknown_yet (name, ref None)
+  in
+  match typ with
+  | Ptyp_alias { data=symb; _ } ->
+     new_type symb
+  | Ptyp_array { data=symb; _ } ->
+     Tarray (new_type symb, Types.unique ())
+  | Ptyp_record fields ->
+     let fs =
+       List.map (fun ({ data : Parsetree.field; _ }) ->
+           data.field_name.data, new_type data.field_typ.data)
+         fields
+     in
+     Trecord (fs, Types.unique ())
 
 and check_apply vals func args =
   let open Parsing.Location in
@@ -201,7 +313,7 @@ and check_record types fields typ =
          let open Parsing.Location in
          let exp_typ = exp.data.typ in
          if typ <> exp_typ
-            || (Symbol.name field) <> (Symbol.name name.data)
+            || not (Symbol.equal field name.data)
          then type_mismatch exp.loc "Record field type mismatch, expected %s, got %s"
                  (Types.to_string typ) (Types.to_string exp_typ))
        ftyps

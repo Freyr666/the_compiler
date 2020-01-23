@@ -9,9 +9,11 @@ type t =
   | Tunit
   | Tarray of t * unique
   | Trecord of (Symbol.t * t) list * unique
-  | Tunknown_yet of Symbol.t * t option
+  | Tunknown_yet of Symbol.t * t option ref
 
 val to_string : t -> string
+
+val coerce : t -> t -> t option
 
 module Env : sig
   type nonrec typ = t
@@ -26,5 +28,8 @@ module Env : sig
                     
   val base_types : types
   val base_values : values
+  
+  val enter : key -> 'a -> 'a t -> 'a t option
+  val replace : key -> 'a -> 'a t -> 'a t
 
 end

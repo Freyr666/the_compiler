@@ -8,7 +8,7 @@ exception Parsing_error of { line : int
                            ; pos : int
                            ; token : string
                            }
-  
+
 let parse in_chan =
   let lexbuf = Lexing.from_channel in_chan in
   try
@@ -24,7 +24,7 @@ let parse in_chan =
 
 let typecheck parsetree =
   let open Middle_end in
-  let res = Semant.trans_expr Types.Env.empty Types.Env.empty parsetree in
+  let res = Semant.trans_expr Types.Env.base_values Types.Env.base_types parsetree in
   Printf.printf "Got expr of type %s" (Types.to_string res.typ);
   res
 
@@ -35,8 +35,14 @@ let () =
           |> typecheck
           |> ignore)
   with
-  | Parsing_error { line = _; pos = _; token = _ } ->
-     ()
+  | Parsing_error { line; pos; token } ->
+     Printf.printf "Parsing error: line %d pos %d token %s" line pos token
+  | Middle_end.Semant.Type_unknown (msg, (ls, le)) ->
+     Printf.printf "Type unknown at [%d:%d]..[%d:%d]: %s "
+       ls.pos_lnum (ls.pos_cnum - ls.pos_bol) le.pos_lnum (le.pos_cnum - le.pos_bol) msg
+  | Middle_end.Semant.Type_mismatch (msg, (ls, le)) ->
+     Printf.printf "Type mismatch at [%d:%d]..[%d:%d]: %s "
+       ls.pos_lnum (ls.pos_cnum - ls.pos_bol) le.pos_lnum (le.pos_cnum - le.pos_bol) msg
   | Failure s ->
      print_endline "Error:";
      print_endline s
