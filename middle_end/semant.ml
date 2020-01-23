@@ -217,15 +217,16 @@ and lift_types loc type_list =
     let rec traverse former (name, typ) =
       match typ with
       | Tunknown_yet (alias, { contents = Some t }) ->
-         if Symbol.equal alias former
+         if List.exists (Symbol.equal alias) former
          then type_mismatch loc "%s -> %s loop detected"
-                (Symbol.name former) (Symbol.name name)
-         else traverse former (alias, t)
+                (String.concat " -> " (List.rev_map Symbol.name former))
+                (Symbol.name name)
+         else traverse (name::former) (alias, t)
       | _ -> ()
     in
     match x with
     | name, Tunknown_yet (alias, { contents = Some t }) ->
-       traverse name (alias, t)
+       traverse [name] (alias, t)
     | _ -> ()
   in
   let rec loop changed list =

@@ -36,12 +36,12 @@ let () =
           |> ignore)
   with
   | Parsing_error { line; pos; token } ->
-     Printf.printf "Parsing error: line %d pos %d token %s" line pos token
+     Printf.printf "Parsing error: line %d pos %d token %s\n" line pos token
   | Middle_end.Semant.Type_unknown (msg, (ls, le)) ->
-     Printf.printf "Type unknown at [%d:%d]..[%d:%d]: %s "
+     Printf.printf "Type unknown at [%d:%d]..[%d:%d]: %s\n"
        ls.pos_lnum (ls.pos_cnum - ls.pos_bol) le.pos_lnum (le.pos_cnum - le.pos_bol) msg
   | Middle_end.Semant.Type_mismatch (msg, (ls, le)) ->
-     Printf.printf "Type mismatch at [%d:%d]..[%d:%d]: %s "
+     Printf.printf "Type mismatch at [%d:%d]..[%d:%d]: %s\n"
        ls.pos_lnum (ls.pos_cnum - ls.pos_bol) le.pos_lnum (le.pos_cnum - le.pos_bol) msg
   | Failure s ->
      print_endline "Error:";
