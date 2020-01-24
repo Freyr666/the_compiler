@@ -32,4 +32,7 @@ module Env : sig
   val enter : key -> 'a -> 'a t -> 'a t option
   val replace : key -> 'a -> 'a t -> 'a t
 
+  val print_typenv : typ t -> unit
+  val print_valenv : value t -> unit
+  
 end

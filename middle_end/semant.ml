@@ -159,6 +159,10 @@ and trans_decs vals types = function
      if typed_expr.typ = Tnil
      then type_mismatch loc "Nil variable requires a type constraint";
      let vals' = Env.replace data.var_name.data (Env.Var typed_expr.typ) vals in
+     print_newline ();
+     print_endline "Dec var:";
+     Env.print_typenv types;
+     Env.print_valenv vals';
      vals', types
   | Pdec_var { data; loc } ->
      let constr =
@@ -175,6 +179,10 @@ and trans_decs vals types = function
           (Types.to_string typed_expr.typ) (Types.to_string constr)
      | Some typ ->
         let vals' = Env.replace data.var_name.data (Env.Var typ) vals in
+        print_newline ();
+        print_endline "Dec var:";
+        Env.print_typenv types;
+        Env.print_valenv vals';
         vals', types
      end
   | Pdec_typ lst ->
@@ -194,9 +202,81 @@ and trans_decs vals types = function
                     types
                     typ_list
      in
+     print_newline ();
+     print_endline "Dec type:";
+     Env.print_typenv types';
+     Env.print_valenv vals;
      vals, types'
-  | Pdec_fun _lst ->
-     vals, types
+  | Pdec_fun lst ->
+     let vals' =
+       List.fold_left
+         (fun vals fundec ->
+           let open Location in
+           let v = type_of_function types fundec.data in
+           Env.replace fundec.data.fun_name.data v vals)
+         vals
+         lst
+     in
+     let _ = List.map
+               (fun fundec ->
+                 let open Location in
+                 trans_function vals' types fundec.data)
+               lst
+     in
+     print_newline ();
+     print_endline "Dec fun:";
+     Env.print_typenv types;
+     Env.print_valenv vals';
+     vals', types
+
+and trans_function vals types fundec =
+  let open Parsetree in
+  let open Location in
+  let args =
+    List.map
+      (fun param ->
+        let { data=symb; loc } = param.data.field_typ in
+        let { data=name; loc=_ } = param.data.field_name in
+        match Env.find_opt symb types with
+        | None ->
+           type_unknown loc "Function parameter type %s is unknown"
+             (Symbol.name symb)
+        | Some t -> name, t)
+      fundec.fun_params
+  in
+  let vals' = List.fold_left (fun vals (name, typ) ->
+                  Env.replace name (Env.Var typ) vals)
+                vals
+                args
+  in
+  let body = trans_expr vals' types fundec.fun_body.data in
+  body
+     
+and type_of_function types (fundec : Parsetree.fundec) =
+  let open Parsetree in
+  let open Location in
+  let args =
+    List.map
+      (fun param ->
+        let { data=symb; loc } = param.data.field_typ in
+        match Env.find_opt symb types with
+        | None ->
+           type_unknown loc "Function parameter type %s is unknown"
+             (Symbol.name symb)
+        | Some t -> t)
+      fundec.fun_params
+  in
+  let return =
+    match fundec.fun_result with
+    | None -> Tunit
+    | Some { data = symb; loc } ->
+       match Env.find_opt symb types with
+       | None ->
+          type_unknown loc "Function return type %s is unknown"
+            (Symbol.name symb)
+       | Some typ -> typ
+  in
+  Env.Fun (args, return)
 
 and unfold_types type_list (name, typ) =
   List.iter (function
@@ -229,18 +309,25 @@ and lift_types loc type_list =
        traverse [name] (alias, t)
     | _ -> ()
   in
+  let rec lift changed = function
+    (*| Tunknown_yet (symb, { contents=None }) ->
+       type_unknown loc "Can't uplift type %s" (Symbol.name symb) *)
+    | Tunknown_yet (_, { contents=Some t }) ->
+       changed := true;
+       t
+    | Tarray (t, unique) ->
+       Tarray (lift changed t, unique)
+    | Trecord (fields, unique) ->
+       Trecord (List.map (fun (n,t) -> n, lift changed t) fields, unique)
+    | t -> t
+  in
   let rec loop changed list =
     if not changed
     then check list
     else
       let changed' = ref false in
       let updated =
-        List.map (function
-            | (name, Tunknown_yet (_, { contents=Some t })) ->
-               changed' := true;
-               (name,t)
-            | t -> t)
-          list
+        List.map (fun (name, t) -> name, lift changed' t) list
       in loop !changed' updated
   in
   List.iter check_loops type_list;

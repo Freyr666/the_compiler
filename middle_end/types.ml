@@ -60,7 +60,24 @@ module Env = struct
     in
     List.fold_left (fun acc (n,t) -> add n t acc) empty types
   
-  let base_values = empty
+  let base_values =
+    let funcs = [ Symbol.symbol "chr", Fun ([Tint],Tstring)
+                ; Symbol.symbol "concat", Fun ([Tstring;Tstring],Tstring)
+                ; Symbol.symbol "exit", Fun ([Tint],Tunit)
+                ; Symbol.symbol "flush", Fun ([],Tunit)
+                ; Symbol.symbol "getchar", Fun ([],Tstring)
+                ; Symbol.symbol "not", Fun ([Tint],Tint)
+                ; Symbol.symbol "ord", Fun ([Tstring],Tint)
+                ; Symbol.symbol "print", Fun ([Tstring],Tunit)
+                ; Symbol.symbol "print_err", Fun ([Tstring],Tunit)
+                ; Symbol.symbol "print_int", Fun ([Tint],Tunit)
+                ; Symbol.symbol "size", Fun ([Tstring],Tunit)
+                ; Symbol.symbol "strcmp", Fun ([Tstring;Tstring],Tint)
+                ; Symbol.symbol "streq", Fun ([Tstring;Tstring],Tint)
+                ; Symbol.symbol "substring", Fun ([Tstring;Tint;Tint],Tstring)
+                ]
+    in
+    List.fold_left (fun acc (n,t) -> add n t acc) empty funcs
 
   let enter k v map =
     try
@@ -71,6 +88,23 @@ module Env = struct
 
   let replace k v map =
     update k (fun _ -> Some v) map
+
+  let print_typenv =
+    iter (fun symb typ ->
+        Printf.printf "type %s = %s\n"
+          (Symbol.name symb) (to_string typ))
+
+  let print_valenv =
+    let val_to_string = function
+      | Var typ ->
+         to_string typ
+      | Fun (args, res) ->
+         let args' = String.concat ", " (List.map to_string args) in
+         "(" ^ args' ^ ") -> " ^ (to_string res)
+    in
+    iter (fun symb v ->
+        Printf.printf "val %s : %s\n"
+          (Symbol.name symb) (val_to_string v))
   
 end
 
