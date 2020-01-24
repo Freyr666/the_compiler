@@ -1,6 +1,7 @@
 open Types
 open Parsing
 open Parsetree
+open Location
 
 exception Type_unknown of string * Location.t
 exception Type_mismatch of string * Location.t
@@ -22,7 +23,6 @@ let type_mismatch : type a. Location.t -> (a, unit, string, 'b) format4 -> a =
   Printf.ksprintf (fun msg -> raise (Type_mismatch (msg, loc)))
 
 let rec trans_expr vals types exp =
-  let open Parsing.Location in
   match exp with
   (* Variable *)
   | Pexp_var { data = v; _ } ->
@@ -186,6 +186,32 @@ and trans_decs vals types = function
         vals', types
      end
   | Pdec_typ lst ->
+     let types' =
+       List.fold_left (fun types typdec ->
+           let name = typdec.data.typ_name in
+           Env.replace name (Tunknown_yet (name, ref None)) types)
+         types
+         lst
+     in
+     let types'' =
+       List.fold_left (fun types typdec ->
+           let name = typdec.data.typ_name in
+           let typ = typdec.data.typ in
+           begin match Env.find_opt name types with
+           | Some (Tunknown_yet (_n,r)) ->
+              (*assert (not (Symbol.equal n name)); *)
+              r := Some(trans_typ types typ)
+           | _ -> ()
+           end;
+           types)
+         types'
+         lst
+     in
+     print_endline "Dec type:";
+     Env.print_typenv types'';
+     Env.print_valenv vals;
+     vals, types''
+     (*
      let (_,loc,typ_list) =
        List.fold_left (fun (types, _, acc) (r : Parsetree.typdec Location.loc) ->
            let typ = construct_type types r.data.typ in
@@ -207,11 +233,11 @@ and trans_decs vals types = function
      Env.print_typenv types';
      Env.print_valenv vals;
      vals, types'
+      *)
   | Pdec_fun lst ->
      let vals' =
        List.fold_left
          (fun vals fundec ->
-           let open Location in
            let v = type_of_function types fundec.data in
            Env.replace fundec.data.fun_name.data v vals)
          vals
@@ -219,7 +245,6 @@ and trans_decs vals types = function
      in
      let _ = List.map
                (fun fundec ->
-                 let open Location in
                  trans_function vals' types fundec.data)
                lst
      in
@@ -229,9 +254,31 @@ and trans_decs vals types = function
      Env.print_valenv vals';
      vals', types
 
+and trans_typ types = function
+  | Ptyp_alias { data=symb; loc } ->
+     begin match Env.find_opt symb types with
+     | None -> type_unknown loc "Can't find type for %s"
+                 (Symbol.name symb)
+     | Some t -> t
+     end
+  | Ptyp_array { data=symb; loc } ->
+     begin match Env.find_opt symb types with
+     | None -> type_unknown loc "Can't find type for %s"
+                 (Symbol.name symb)
+     | Some t -> Tarray (t, unique ())
+     end
+  | Ptyp_record fields ->
+     let fs = List.map (fun field ->
+                  match Env.find_opt field.data.field_typ.data types with
+                  | None -> type_unknown field.data.field_typ.loc
+                              "Unknown field type %s"
+                              (Symbol.name field.data.field_typ.data)
+                  | Some t -> field.data.field_name.data, t)
+                fields
+     in
+     Trecord (fs, unique ())
+
 and trans_function vals types fundec =
-  let open Parsetree in
-  let open Location in
   let args =
     List.map
       (fun param ->
@@ -253,8 +300,6 @@ and trans_function vals types fundec =
   body
      
 and type_of_function types (fundec : Parsetree.fundec) =
-  let open Parsetree in
-  let open Location in
   let args =
     List.map
       (fun param ->
@@ -334,7 +379,6 @@ and lift_types loc type_list =
   loop true type_list
 
 and construct_type types (typ : Parsetree.typ) =
-  let open Parsing.Location in
   let new_type name =
     match Env.find_opt name types with
     | Some t -> t
@@ -355,7 +399,6 @@ and construct_type types (typ : Parsetree.typ) =
      Trecord (fs, Types.unique ())
 
 and check_apply vals func args =
-  let open Parsing.Location in
   match Env.find_opt func.data vals with
   | Some (Fun (argtyps, rtyp))
        when (List.length argtyps = List.length args) ->
@@ -398,7 +441,6 @@ and check_record types fields typ =
   | Some (Trecord (ftyps,_) as ret)
        when (List.length ftyps) = (List.length fields) ->
      List.iter2 (fun (field, typ) (name, exp) ->
-         let open Parsing.Location in
          let exp_typ = exp.data.typ in
          if typ <> exp_typ
             || not (Symbol.equal field name.data)
@@ -412,7 +454,6 @@ and check_record types fields typ =
            (Symbol.name typ.data)
 
 and check_if vals types test true_branch false_branch =
-  let open Parsing.Location in
   let test_typ = (trans_expr vals types test.data).typ in
   if test_typ <> Tint
   then type_mismatch test.loc "If condition should have type Int, found exp of type %s"
