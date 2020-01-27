@@ -40,13 +40,13 @@ let rec trans_expr vals types exp =
                   (map ~f:(trans_expr vals types))
                   args
      in
-     let typ = check_apply vals func args in
+     let typ = check_apply vals types func args in
      { expr = (); typ }
   (* Basic operators *)
   | Pexp_binop { op; left; right } ->
      let left' = trans_expr vals types left.data in
      let right' = trans_expr vals types right.data in
-     let typ = check_binop op left' right' in
+     let typ = check_binop types op left' right' in
      { expr = (); typ }
   (* Record constructors *)
   | Pexp_record { fields; typ } ->
@@ -67,7 +67,7 @@ let rec trans_expr vals types exp =
   | Pexp_assign { var; exp } ->
      let var = trans_var vals types var in
      let exp = map ~f:(trans_expr vals types) exp in
-     check_type var.typ exp;
+     check_type types var.typ exp;
      { expr = (); typ = Tunit }
   (* If cond *)
   | Pexp_if { test; true_branch; false_branch } ->
@@ -77,8 +77,8 @@ let rec trans_expr vals types exp =
   | Pexp_while { test; body } ->
      let test = map ~f:(trans_expr vals types) test in
      let body = map ~f:(trans_expr vals types) body in
-     check_type Tint test;
-     check_type Tunit body;
+     check_type types Tint test;
+     check_type types Tunit body;
      { expr = (); typ = Tunit }
   | Pexp_for { var; escape; lo; hi; body } ->
      let index =
@@ -116,7 +116,7 @@ let rec trans_expr vals types exp =
      let size = map ~f:(trans_expr vals types) size in
      let init = map ~f:(trans_expr vals types) init in
      let typ = check_array types typ.data init in
-     check_type Tint size;
+     check_type types Tint size;
      { expr = (); typ }
   | Pexp_let { decs; body } ->
      let vals', types' =
@@ -128,27 +128,29 @@ let rec trans_expr vals types exp =
      trans_expr vals' types' body.data
 
 and trans_var vals types var =
-  match var with
+   match var with
   | Pvar_simple { data = symb; loc } -> begin
       match Env.find_opt symb vals with
       | Some (Env.Var typ) -> { expr = (); typ }
       | _ -> type_unknown loc "Expected a simple var"
     end
   | Pvar_field { data = (var, symb); loc } -> begin
-     let parent = trans_var vals types var in
-     match parent with
-     | { expr = (); typ = Trecord (fields, _) } ->
-        (match List.assoc_opt symb fields with
-         | Some typ -> { expr = (); typ }
-         | None -> type_mismatch loc "Record has no such field %s" (Symbol.name symb))
-     | _ -> type_mismatch loc "Not a record"
+      let parent = trans_var vals types var in
+      let typ = Types.real_type types parent.typ in
+      match typ with
+      | Trecord (fields, _)->
+         (match List.assoc_opt symb fields with
+          | Some typ -> { expr = (); typ }
+          | None -> type_mismatch loc "Record has no such field %s" (Symbol.name symb))
+      | _ -> type_mismatch loc "Not a record"
     end
   | Pvar_subscript { data = (var, exp); loc } -> begin
       let parent = trans_var vals types var in
       let index = trans_expr vals types exp in
-      match parent, index with
-      | { expr = (); typ = Tarray (typ, _) },
-        { expr = (); typ = Tint } ->
+      let parent_typ = Types.real_type types parent.typ in
+      let index_typ = Types.real_type types index.typ in
+      match parent_typ, index_typ with
+      | Tarray (typ, _), Tint ->
          { expr = (); typ }
       | _ -> type_mismatch loc "Expected to find array"
     end
@@ -156,13 +158,13 @@ and trans_var vals types var =
 and trans_decs vals types = function
   | Pdec_var { data; loc } when data.var_typ = None ->
      let typed_expr = trans_expr vals types data.var_init.data in
-     if typed_expr.typ = Tnil
+     if Types.real_type types typed_expr.typ = Tnil
      then type_mismatch loc "Nil variable requires a type constraint";
      let vals' = Env.replace data.var_name.data (Env.Var typed_expr.typ) vals in
-     print_newline ();
+     (* Debug 
      print_endline "Dec var:";
      Env.print_typenv types;
-     Env.print_valenv vals';
+     Env.print_valenv vals'; *)
      vals', types
   | Pdec_var { data; loc } ->
      let constr =
@@ -173,23 +175,25 @@ and trans_decs vals types = function
           type_unknown loc "No such type %s" (Symbol.name typ_name.data)
      in
      let typed_expr = trans_expr vals types data.var_init.data in
-     begin match Types.coerce typed_expr.typ constr with
-     | None ->
-        type_mismatch loc "Can't coerce %s to %s"
-          (Types.to_string typed_expr.typ) (Types.to_string constr)
-     | Some typ ->
-        let vals' = Env.replace data.var_name.data (Env.Var typ) vals in
-        print_newline ();
-        print_endline "Dec var:";
-        Env.print_typenv types;
-        Env.print_valenv vals';
-        vals', types
-     end
+     let typ = Types.real_type types typed_expr.typ
+     and constr_typ = Types.real_type types constr in
+     if typ <> constr_typ
+     then 
+       type_mismatch loc "Can't coerce %s to %s"
+         (Types.to_string typed_expr.typ) (Types.to_string constr)
+     else
+       let vals' = Env.replace data.var_name.data (Env.Var typ) vals in
+       (* Debug
+       print_newline ();
+       print_endline "Dec var:";
+       Env.print_typenv types;
+       Env.print_valenv vals'; *)
+       vals', types
   | Pdec_typ lst ->
      let types' =
        List.fold_left (fun types typdec ->
            let name = typdec.data.typ_name in
-           Env.replace name (Tunknown_yet (name, ref None)) types)
+           Env.replace name (Talias (name, ref None)) types)
          types
          lst
      in
@@ -198,8 +202,8 @@ and trans_decs vals types = function
            let name = typdec.data.typ_name in
            let typ = typdec.data.typ in
            begin match Env.find_opt name types with
-           | Some (Tunknown_yet (_n,r)) ->
-              (*assert (not (Symbol.equal n name)); *)
+           | Some (Talias (_n,r)) ->
+              (*if (not (Symbol.equal n name))*)
               r := Some(trans_typ types typ)
            | _ -> ()
            end;
@@ -207,33 +211,11 @@ and trans_decs vals types = function
          types'
          lst
      in
+     (* Debug
      print_endline "Dec type:";
      Env.print_typenv types'';
-     Env.print_valenv vals;
+     Env.print_valenv vals; *)
      vals, types''
-     (*
-     let (_,loc,typ_list) =
-       List.fold_left (fun (types, _, acc) (r : Parsetree.typdec Location.loc) ->
-           let typ = construct_type types r.data.typ in
-           unfold_types acc (r.data.typ_name, typ);
-           (Env.replace r.data.typ_name typ types,
-            r.loc,
-            acc@[r.data.typ_name, typ]))
-         (types, Location.dummy, [])
-         lst
-     in
-     let typ_list = lift_types loc typ_list in
-     let types' = List.fold_left (fun env (name, typ) ->
-                      Env.replace name typ env)
-                    types
-                    typ_list
-     in
-     print_newline ();
-     print_endline "Dec type:";
-     Env.print_typenv types';
-     Env.print_valenv vals;
-     vals, types'
-      *)
   | Pdec_fun lst ->
      let vals' =
        List.fold_left
@@ -248,10 +230,10 @@ and trans_decs vals types = function
                  trans_function vals' types fundec.data)
                lst
      in
-     print_newline ();
+     (* print_newline ();
      print_endline "Dec fun:";
      Env.print_typenv types;
-     Env.print_valenv vals';
+     Env.print_valenv vals'; *)
      vals', types
 
 and trans_typ types = function
@@ -273,7 +255,8 @@ and trans_typ types = function
                   | None -> type_unknown field.data.field_typ.loc
                               "Unknown field type %s"
                               (Symbol.name field.data.field_typ.data)
-                  | Some t -> field.data.field_name.data, t)
+                  | Some _ -> field.data.field_name.data,
+                              Talias (field.data.field_typ.data, ref None))
                 fields
      in
      Trecord (fs, unique ())
@@ -323,88 +306,13 @@ and type_of_function types (fundec : Parsetree.fundec) =
   in
   Env.Fun (args, return)
 
-and unfold_types type_list (name, typ) =
-  List.iter (function
-      | (_, Tunknown_yet (n, r)) when !r = None && n = name ->
-         r := Some typ
-      | _ -> ())
-    type_list
-
-and lift_types loc type_list =
-  let check list =
-    List.iter (function (_, Tunknown_yet (name,_)) ->
-                 type_unknown loc "Rec type %s is unknown" (Symbol.name name)
-                      | _ -> ())
-      list;
-    list
-  in
-  let check_loops x =
-    let rec traverse former (name, typ) =
-      match typ with
-      | Tunknown_yet (alias, { contents = Some t }) ->
-         if List.exists (Symbol.equal alias) former
-         then type_mismatch loc "%s -> %s loop detected"
-                (String.concat " -> " (List.rev_map Symbol.name former))
-                (Symbol.name name)
-         else traverse (name::former) (alias, t)
-      | _ -> ()
-    in
-    match x with
-    | name, Tunknown_yet (alias, { contents = Some t }) ->
-       traverse [name] (alias, t)
-    | _ -> ()
-  in
-  let rec lift changed = function
-    (*| Tunknown_yet (symb, { contents=None }) ->
-       type_unknown loc "Can't uplift type %s" (Symbol.name symb) *)
-    | Tunknown_yet (_, { contents=Some t }) ->
-       changed := true;
-       t
-    | Tarray (t, unique) ->
-       Tarray (lift changed t, unique)
-    | Trecord (fields, unique) ->
-       Trecord (List.map (fun (n,t) -> n, lift changed t) fields, unique)
-    | t -> t
-  in
-  let rec loop changed list =
-    if not changed
-    then check list
-    else
-      let changed' = ref false in
-      let updated =
-        List.map (fun (name, t) -> name, lift changed' t) list
-      in loop !changed' updated
-  in
-  List.iter check_loops type_list;
-  loop true type_list
-
-and construct_type types (typ : Parsetree.typ) =
-  let new_type name =
-    match Env.find_opt name types with
-    | Some t -> t
-    | None ->
-       Tunknown_yet (name, ref None)
-  in
-  match typ with
-  | Ptyp_alias { data=symb; _ } ->
-     new_type symb
-  | Ptyp_array { data=symb; _ } ->
-     Tarray (new_type symb, Types.unique ())
-  | Ptyp_record fields ->
-     let fs =
-       List.map (fun ({ data : Parsetree.field; _ }) ->
-           data.field_name.data, new_type data.field_typ.data)
-         fields
-     in
-     Trecord (fs, Types.unique ())
-
-and check_apply vals func args =
+and check_apply vals types func args =
   match Env.find_opt func.data vals with
   | Some (Fun (argtyps, rtyp))
        when (List.length argtyps = List.length args) ->
      List.iter2 (fun typ exp ->
          let exp_typ = exp.data.typ in
-         if typ <> exp_typ
+         if Types.real_type types typ <> Types.real_type types exp_typ
          then type_mismatch exp.loc "Function argument type mismatch, expected %s, got %s"
                 (Types.to_string typ) (Types.to_string exp_typ))
        argtyps
@@ -416,36 +324,42 @@ and check_apply vals func args =
   | _ ->
      type_mismatch func.loc "Callee is not a function"
                    
-and check_binop op left right =
+and check_binop types op left right =
   let kind = function
     | Pop_plus | Pop_minus | Pop_times | Pop_divide -> `Arith
     | Pop_and | Pop_or -> `Logic
     | Pop_lt | Pop_le | Pop_gt | Pop_ge -> `Relat
     | Pop_eq | Pop_ne -> `Eq
   in
+  let left_type = Types.real_type types left.typ
+  and right_type = Types.real_type types right.typ in
   match kind op.data with
   | `Arith | `Logic | `Relat ->
-     if left.typ = Tint && left.typ = right.typ
+     if left_type = Tint && left_type = right_type
      then Tint
      else type_mismatch op.loc "Arithmetic and logic operations require integer operands"
   | `Eq ->
-     if left.typ = right.typ
+     if Types.equal types left_type right_type
      then Tint
      else type_mismatch op.loc "Equality requires both operands to have the same type"
 
 and check_record types fields typ =
-  match Env.find_opt typ.data types with
+  match
+    Env.find_opt typ.data types
+    |> Option.map (Types.real_type types)
+  with
   | None ->
      type_mismatch typ.loc "Record type %s is undefined"
        (Symbol.name typ.data)
   | Some (Trecord (ftyps,_) as ret)
        when (List.length ftyps) = (List.length fields) ->
      List.iter2 (fun (field, typ) (name, exp) ->
-         let exp_typ = exp.data.typ in
-         if typ <> exp_typ
+         let expected = Types.real_type types typ in
+         let exp_typ = Types.real_type types exp.data.typ in
+         if not (Types.equal types expected exp_typ)
             || not (Symbol.equal field name.data)
          then type_mismatch exp.loc "Record field type mismatch, expected %s, got %s"
-                 (Types.to_string typ) (Types.to_string exp_typ))
+                 (Types.to_string expected) (Types.to_string exp_typ))
        ftyps
        fields;
      ret
@@ -454,17 +368,25 @@ and check_record types fields typ =
            (Symbol.name typ.data)
 
 and check_if vals types test true_branch false_branch =
-  let test_typ = (trans_expr vals types test.data).typ in
+  let test_typ =
+    (trans_expr vals types test.data).typ
+    |> Types.real_type types
+  in
   if test_typ <> Tint
   then type_mismatch test.loc "If condition should have type Int, found exp of type %s"
          (Types.to_string test_typ);
   match false_branch with
   | None ->
      (trans_expr vals types true_branch.data).typ
+     |> Types.real_type types
   | Some false_branch ->
-     let true_typ = (trans_expr vals types true_branch.data).typ
-     and false_typ = (trans_expr vals types false_branch.data).typ
-     in if true_typ = false_typ
+     let true_typ =
+       (trans_expr vals types true_branch.data).typ
+       |> Types.real_type types
+     and false_typ =
+       (trans_expr vals types false_branch.data).typ
+       |> Types.real_type types
+     in if Types.equal types true_typ false_typ
         then true_typ
         else type_mismatch false_branch.loc
                "If branches should be of the same type, found %s %s"
@@ -472,13 +394,19 @@ and check_if vals types test true_branch false_branch =
 
 and check_array types typ exp =
   match Env.find_opt typ types with
-  | Some (Tarray (t,_) as res) ->
-     check_type t exp;
-     res
+  | Some res ->
+     begin match Types.real_type types res with
+     | Tarray (typ,_) ->
+        check_type types typ exp;
+        res
+     | _ ->
+        type_unknown exp.loc "No such array type %s"
+          (Symbol.name typ)
+     end
   | _ -> type_unknown exp.loc "No such array type %s"
            (Symbol.name typ)
 
-and check_type typ typed_exp =
-  if typ <> typed_exp.data.typ
+and check_type types typ typed_exp =
+  if Types.real_type types typ <> Types.real_type types typed_exp.data.typ
   then type_mismatch typed_exp.loc "Expected %s, got %s"
          (Types.to_string typ) (Types.to_string typed_exp.data.typ)

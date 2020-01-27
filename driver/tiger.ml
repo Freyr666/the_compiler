@@ -46,4 +46,5 @@ let () =
   | Failure s ->
      print_endline "Error:";
      print_endline s
-  | exn -> print_endline (Printexc.to_string exn)
+  | exn ->
+     print_endline (Printexc.to_string exn)

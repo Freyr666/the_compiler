@@ -11,7 +11,7 @@ type t =
   | Tunit
   | Tarray of t * unique
   | Trecord of (Symbol.t * t) list * unique
-  | Tunknown_yet of Symbol.t * t option ref
+  | Talias of Symbol.t * t option ref
 
 let rec to_string = function
   | Tnil -> "nil"
@@ -25,11 +25,13 @@ let rec to_string = function
        |> List.map (fun (n,t) -> (Symbol.name n) ^ " : " ^ (to_string t))
        |> String.concat ", "
      in "{ " ^ content ^ " }"
-  | Tunknown_yet (_, { contents = Some t}) ->
-     to_string t
-  | Tunknown_yet (s, { contents = None}) ->
+  | Talias (s, { contents = Some _t}) ->
+     "rec type " ^ (Symbol.name s)
+  (*to_string t*)
+  | Talias (s, { contents = None}) ->
      "rec type " ^ (Symbol.name s)
 
+(*
 let rec coerce typ to_typ =
   if typ = to_typ
   then Some typ
@@ -40,7 +42,7 @@ let rec coerce typ to_typ =
     | Tunknown_yet (_, {contents = Some t}), _ -> coerce t to_typ
     | _, Tunknown_yet (_, {contents = Some t}) -> coerce typ t
     | _ -> None
-
+ *)
 module Env = struct
   type nonrec typ = t
   
@@ -108,3 +110,15 @@ module Env = struct
   
 end
 
+let rec real_type env = function
+  | Talias (name, {contents=None}) ->
+     real_type env (Env.find name env)
+  | Talias (_, {contents=Some t}) ->
+     real_type env t
+  | t -> t
+
+let equal env l r =
+  match real_type env l, real_type env r with
+  | Trecord _, Tnil | Tnil, Trecord _ ->
+     true
+  | l', r' -> l' = r'
